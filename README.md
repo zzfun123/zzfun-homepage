@@ -83,3 +83,25 @@ npm run build
 # 本地预览打包后的生产版本
 npm run preview
 ```
+
+---
+
+## 4. 以后如何修改并更新线上网站（`zzfun.cc`）
+
+因为你的 Cloudflare 已经和 GitHub 仓库（`zzfun123/zzfun-homepage`）绑定了**全自动同步**，以后只要 GitHub 里的文件一变，`zzfun.cc` 就会在 30 秒内自动重新打包上线（完全不需要再去打开 Cloudflare）。
+
+### 标准三步曲（零命令行）：
+
+1. **第一步：在本地改代码并预览**
+   - 双击文件夹里的 **`启动网页.bat`**，浏览器会自动打开本地预览页面。
+   - 修改你需要改的文件（比如打开 `index.html` 改文字或把 `#` 换成真实链接；或者让 AI 帮你改 `src/` 里的效果），本地浏览器会实时看到修改后的效果。
+
+2. **第二步：把改好的文件拖进 GitHub**
+   - 在浏览器打开你的 GitHub 仓库上传地址：
+     👉 **https://github.com/zzfun123/zzfun-homepage/upload/main**
+   - 如果你只改了 `index.html`，就把新的 `index.html` 拖进去；如果改了 `src` 里的文件，就把整个 **`src` 文件夹**（连同 `index.html`）一起拖进去（它会自动覆盖旧文件）。
+   - 点击页面最底部绿色的 **`Commit changes`** 按钮。
+
+3. **第三步：等待 30 秒自动生效**
+   - 点完 `Commit changes` 后什么都不用管，Cloudflare 会自动检测到 GitHub 更新并后台重新打包，约 30 秒后刷新 **https://zzfun.cc** 即可看到最新网页！
+

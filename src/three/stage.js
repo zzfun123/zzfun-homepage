@@ -1,248 +1,320 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import gsap from 'gsap';
-import { createHeadlineTexture } from './headlineTexture.js';
-import { createGlassMaterial } from './glassMaterial.js';
-import { createFloatingToys } from './floatingToys.js';
 
-const MODEL_URL = 'https://motionsites.org/assets/prompt-media/fa96096e78c8153a70d2.glb';
+const tomatoVertexShader = /* glsl */ `
+  uniform float uTime;
+  uniform float uPulse;
 
-function normalizeGeometry(geometry) {
-  geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
-  box.getCenter(center);
-  box.getSize(size);
-  geometry.translate(-center.x, -center.y, -center.z);
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  geometry.scale(1 / maxDim, 1 / maxDim, 1 / maxDim);
-  return geometry;
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+  varying vec3 vWorldNormal;
+  varying vec3 vLocalPos;
+
+  void main() {
+    vLocalPos = position;
+
+    // 点击时的果冻 Q 弹波纹形变
+    float wave = sin(position.y * 5.5 - uTime * 14.0) * uPulse * 0.085;
+    vec3 displaced = position * (1.0 + wave * vec3(1.0, -0.8, 1.0));
+
+    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
+    vec4 mvPos = viewMatrix * worldPos;
+    gl_Position = projectionMatrix * mvPos;
+
+    vNormal = normalize(normalMatrix * normal);
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vViewPos = -mvPos.xyz;
+  }
+`;
+
+const tomatoFragmentShader = /* glsl */ `
+  uniform vec3 uBaseColor;
+  uniform vec3 uDeepColor;
+  uniform vec3 uSubsurfaceColor;
+  uniform vec3 uRimColor;
+  uniform float uRoughness;
+  uniform float uPulse;
+
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+  varying vec3 vWorldNormal;
+  varying vec3 vLocalPos;
+
+  void main() {
+    vec3 n = normalize(vNormal);
+    vec3 viewDir = normalize(vViewPos);
+
+    // 画廊三点布光：主柔光箱 + 侧逆暖光 + 顶部天光
+    vec3 keyLight = normalize(vec3(0.68, 0.92, 0.85));
+    vec3 fillLight = normalize(vec3(-0.85, -0.35, 0.55));
+
+    float ndotl = dot(n, keyLight);
+    float diffuse = smoothstep(-0.35, 0.85, ndotl);
+
+    // 基础漫反射与暗部层次
+    vec3 color = mix(uDeepColor, uBaseColor, 0.25 + 0.75 * diffuse);
+
+    // 次表面散射感 (SSS)：让西红柿果肉呈现出饱满透亮的汁水感
+    float sss = smoothstep(-0.6, 0.4, ndotl) * (1.0 - max(0.0, dot(n, viewDir)));
+    color += uSubsurfaceColor * sss * 0.35;
+
+    // 侧补光
+    float fill = max(0.0, dot(n, fillLight));
+    color += uBaseColor * fill * 0.14;
+
+    // 画廊顶部漫射反光
+    float sky = clamp(vWorldNormal.y * 0.5 + 0.5, 0.0, 1.0);
+    color += vec3(0.05, 0.06, 0.08) * sky;
+
+    // 主光源柔光箱镜面高光 (Blinn-Phong)
+    vec3 halfKey = normalize(keyLight + viewDir);
+    float specPower = mix(96.0, 28.0, uRoughness);
+    float spec1 = pow(max(dot(n, halfKey), 0.0), specPower);
+    float crispSpec = smoothstep(0.42, 0.88, spec1);
+    color += vec3(1.0, 0.98, 0.96) * crispSpec * (1.0 - uRoughness * 0.55);
+
+    // 次级边缘反光点
+    vec3 backLight = normalize(vec3(-0.55, 0.8, -0.45));
+    vec3 halfBack = normalize(backLight + viewDir);
+    float spec2 = pow(max(dot(n, halfBack), 0.0), 36.0);
+    color += uRimColor * spec2 * 0.28;
+
+    // 菲涅尔边缘光泽
+    float fresnel = clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0, 1.0);
+    color = mix(color, uRimColor, pow(fresnel, 3.2) * 0.42);
+
+    // 极细腻的画廊深色外轮廓收边
+    float contour = smoothstep(0.80, 0.92, fresnel);
+    color = mix(color, vec3(0.08, 0.09, 0.12), contour * 0.38);
+
+    // 点击脉冲亮泽反馈
+    color = mix(color, vec3(1.0, 0.92, 0.82), uPulse * 0.28);
+
+    gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+  }
+`;
+
+function createStudioMaterial({ base, deep, sss, rim, roughness }) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Color(base) },
+      uDeepColor: { value: new THREE.Color(deep) },
+      uSubsurfaceColor: { value: new THREE.Color(sss) },
+      uRimColor: { value: new THREE.Color(rim) },
+      uRoughness: { value: roughness },
+      uTime: { value: 0 },
+      uPulse: { value: 0 },
+    },
+    vertexShader: tomatoVertexShader,
+    fragmentShader: tomatoFragmentShader,
+  });
 }
 
-export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
+/**
+ * 构建高精度画廊级 3D 西红柿模型
+ */
+function buildGalleryTomato() {
+  const group = new THREE.Group();
+
+  const fleshMat = createStudioMaterial({
+    base: '#FF432E',
+    deep: '#A8160C',
+    sss: '#FF8A5B',
+    rim: '#FFE5D9',
+    roughness: 0.16,
+  });
+
+  const calyxMat = createStudioMaterial({
+    base: '#27AE60',
+    deep: '#0F522B',
+    sss: '#6EE798',
+    rim: '#D4FFDF',
+    roughness: 0.42,
+  });
+
+  // 1. 饱满 8 瓣微棱西红柿果体
+  const bodyGeo = new THREE.SphereGeometry(1.0, 96, 64);
+  const pos = bodyGeo.attributes.position;
+  const v = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const angle = Math.atan2(v.z, v.x);
+    const rXZ = Math.hypot(v.x, v.z);
+
+    // 8 瓣自然圆润果棱
+    const rib = 1.0 + 0.038 * Math.cos(angle * 8.0) * Math.sin(rXZ * Math.PI * 0.85);
+    v.x *= rib;
+    v.z *= rib;
+
+    // 顶部与底部果蒂自然凹窝
+    const topDimple = v.y > 0 ? Math.exp(-rXZ * rXZ * 5.8) * 0.17 : 0.0;
+    const botDimple = v.y < 0 ? Math.exp(-rXZ * rXZ * 7.5) * 0.09 : 0.0;
+    v.y = v.y * 0.79 - topDimple + botDimple;
+
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  bodyGeo.computeVertexNormals();
+
+  const bodyMesh = new THREE.Mesh(bodyGeo, fleshMat);
+  group.add(bodyMesh);
+
+  // 2. 顶部 6 片舒展微翘的绿萼叶 (Sepals)
+  const sepalCount = 6;
+  const sepalGeo = new THREE.SphereGeometry(0.16, 28, 20);
+  const sPos = sepalGeo.attributes.position;
+  for (let i = 0; i < sPos.count; i++) {
+    v.fromBufferAttribute(sPos, i);
+    // 拉伸为叶片形：由根部向叶尖渐尖，并在叶尖向上微翘
+    const t = (v.x + 0.16) / 0.32; // 0 (根部) -> 1 (叶尖)
+    const lengthX = t * 0.62;
+    const widthZ = v.z * (1.15 - t * 0.88) * 0.85;
+    const archY = v.y * 0.24 - Math.sin(t * Math.PI) * 0.06 + Math.pow(t, 2.4) * 0.14;
+    sPos.setXYZ(i, lengthX, archY, widthZ);
+  }
+  sepalGeo.computeVertexNormals();
+
+  for (let i = 0; i < sepalCount; i++) {
+    const theta = (i / sepalCount) * Math.PI * 2 + (i % 2) * 0.08;
+    const leafMesh = new THREE.Mesh(sepalGeo, calyxMat);
+    leafMesh.position.set(0, 0.65, 0);
+    leafMesh.rotation.y = theta;
+    leafMesh.rotation.z = -0.08;
+    group.add(leafMesh);
+  }
+
+  // 3. 自然微弯的中央果蒂 (Stem)
+  const stemGeo = new THREE.CylinderGeometry(0.042, 0.088, 0.44, 24, 18);
+  const stPos = stemGeo.attributes.position;
+  for (let i = 0; i < stPos.count; i++) {
+    v.fromBufferAttribute(stPos, i);
+    const h = (v.y + 0.22) / 0.44; // 0 -> 1
+    v.x += Math.pow(h, 1.9) * 0.14;
+    v.y = h * 0.42;
+    stPos.setXYZ(i, v.x, v.y, v.z);
+  }
+  stemGeo.computeVertexNormals();
+
+  const stemMesh = new THREE.Mesh(stemGeo, calyxMat);
+  stemMesh.position.set(0, 0.61, 0);
+  group.add(stemMesh);
+
+  return {
+    group,
+    materials: [fleshMat, calyxMat],
+  };
+}
+
+/**
+ * 构建西红柿底部的画廊柔和呼吸投影
+ */
+function buildContactShadow() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 120);
+  grad.addColorStop(0, 'rgba(6, 26, 18, 0.22)');
+  grad.addColorStop(0.45, 'rgba(6, 26, 18, 0.09)');
+  grad.addColorStop(1, 'rgba(6, 26, 18, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+
+export function createStage({ canvas, dragZone, onHoverChange }) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
-    alpha: false,
+    alpha: true,
     powerPreference: 'high-performance',
   });
-  renderer.setClearColor(0xffffff, 1);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
   camera.position.set(0, 0, 10);
   camera.lookAt(0, 0, 0);
 
-  // 1. 背景巨型标题画布 + 白到绿喷枪颗粒弥散渐变 Shader 场景
-  const headline = createHeadlineTexture();
-  const bgScene = new THREE.Scene();
-  const bgCamera = new THREE.Camera();
-  const bgMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTex: { value: headline.texture },
-      uScroll: { value: 0 },
-      uTime: { value: 0 },
-    },
-    vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = vec4(position.xy, 0.0, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform sampler2D uTex;
-      uniform float uScroll;
-      uniform float uTime;
-      varying vec2 vUv;
-
-      // 高频伪随机哈希噪声（生成喷枪散点颗粒）
-      float hash(vec2 p) {
-        p = fract(p * vec2(123.34, 456.21));
-        p += dot(p, p + 45.32);
-        return fract(p.x * p.y);
-      }
-
-      void main() {
-        // 双尺度颗粒噪声：细砂粒 + 中颗粒（零均值 -0.5 ~ +0.5）
-        float g1 = hash(floor(gl_FragCoord.xy * 0.92));
-        float g2 = hash(floor(gl_FragCoord.xy * 0.45 + 19.7));
-        float grain = (g1 * 0.68 + g2 * 0.32) - 0.5;
-
-        // 用颗粒直接抖动 UV 坐标（让白->绿交界处形成真实的喷枪散点互渗，顶部纯白区域不受影响）
-        vec2 jUv = vUv + vec2(grain * 0.075, grain * 0.115);
-
-        // 有机波浪曲线高度（静止柔和，不随滚动上涌干扰阅读）
-        float wave1 = sin(jUv.x * 3.2 + uTime * 0.18) * 0.045
-                    + cos(jUv.x * 1.7 - 0.6) * 0.035;
-        float yCoord = jUv.y - wave1;
-
-        // 色彩定义：顶部 100% 纯白 -> 嫩黄绿 -> 鲜草绿 -> 底部深翠绿叶片弧
-        vec3 pureWhite  = vec3(1.0, 1.0, 1.0);
-        vec3 softLime   = vec3(0.84, 0.95, 0.66); // 浅嫩黄绿
-        vec3 warmMustard= vec3(0.76, 0.87, 0.38); // 右侧暖黄绿
-        vec3 freshGreen = vec3(0.38, 0.82, 0.41); // 鲜绿
-        vec3 deepEmerald= vec3(0.07, 0.67, 0.33); // 参考图中的高饱和深翠绿
-
-        // 第一层：纯白 -> 嫩黄绿（页面上半部保持 100% 纯白 #FFFFFF）
-        float m1 = smoothstep(0.48, 0.12, yCoord);
-        vec3 baseLime = mix(softLime, warmMustard, smoothstep(0.25, 0.92, jUv.x));
-        vec3 bgColor = mix(pureWhite, baseLime, m1);
-
-        // 第二层：中下部鲜绿弥散层
-        float m2 = smoothstep(0.28, -0.05, yCoord + sin(jUv.x * 2.5) * 0.04);
-        bgColor = mix(bgColor, freshGreen, m2 * 0.88);
-
-        // 第三层：参考图标志性的斜向深翠绿有机叶片弧块
-        vec2 leafP = jUv - vec2(0.46, 0.12);
-        float ang = -0.48;
-        mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
-        leafP = rot * leafP;
-        // 下边界略收紧、上边界宽弥散
-        float yScale = leafP.y < 0.0 ? 2.4 : 1.55;
-        float leafDist = length(vec2(leafP.x * 0.78, leafP.y * yScale));
-        float leafMask = smoothstep(0.34, 0.04, leafDist);
-        bgColor = mix(bgColor, deepEmerald, leafMask * 0.92);
-
-        // 在有色区域叠加微妙的纸张颗粒质感与极少量白点纤维（纯白区权重为 0，确保白底绝对纯净）
-        float greenWeight = clamp(m1 + leafMask, 0.0, 1.0);
-        bgColor += grain * 0.055 * greenWeight;
-        float speck = step(0.9965, g1) * greenWeight;
-        bgColor = mix(bgColor, vec3(0.98, 1.0, 0.92), speck * 0.55);
-        bgColor = clamp(bgColor, 0.0, 1.0);
-
-        // 合成前景巨型标题文字纹理 (uTex)
-        vec4 tex = texture2D(uTex, vUv);
-        vec3 finalColor = mix(bgColor, tex.rgb, tex.a);
-
-        gl_FragColor = vec4(finalColor, 1.0);
-      }
-    `,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const bgQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
-  bgQuad.frustumCulled = false;
-  bgScene.add(bgQuad);
-
-  // 2. 双通道折射 RenderTargets
-  const rtParams = {
-    type: THREE.HalfFloatType,
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    depthBuffer: true,
-  };
-  const rtBack = new THREE.WebGLRenderTarget(1, 1, rtParams);
-  const rtFront = new THREE.WebGLRenderTarget(1, 1, rtParams);
-
-  const backMat = createGlassMaterial(true, rtBack.texture);
-  const frontMat = createGlassMaterial(false, rtFront.texture);
-
-  // 3. 主 3D 舞台（玻璃立方体 + 悬浮玩具卫星）
-  const mainScene = new THREE.Scene();
-
-  const pivot = new THREE.Group();
-  const scrollGroup = new THREE.Group();
+  // 舞台层级：stageRoot（位置与整体缩放） -> spinner（360°旋转） -> bounceGroup（Q弹缩放） -> 西红柿
+  const stageRoot = new THREE.Group();
   const spinner = new THREE.Group();
-  spinner.rotation.set(-0.42, 0.62, 0.18);
+  const bounceGroup = new THREE.Group();
 
-  scrollGroup.add(spinner);
-  pivot.add(scrollGroup);
-  mainScene.add(pivot);
+  // 初始优雅倾角：露出翠绿五角果蒂与高光肩部
+  spinner.rotation.set(0.42, -0.35, 0.14);
 
-  // 先用高质量圆角立方体立即可用，随后若远程 GLB 加载成功则无缝替换几何体
-  const fallbackGeo = normalizeGeometry(new RoundedBoxGeometry(1, 1, 1, 10, 0.13));
-  const cubeMesh = new THREE.Mesh(fallbackGeo, frontMat);
-  spinner.add(cubeMesh);
+  const tomato = buildGalleryTomato();
+  bounceGroup.add(tomato.group);
+  spinner.add(bounceGroup);
+  stageRoot.add(spinner);
 
-  // 悬浮 3D 几何体微交互系统
-  const toys = createFloatingToys();
-  mainScene.add(toys.group);
+  // 底部接触软阴影
+  const shadowMesh = buildContactShadow();
+  shadowMesh.position.set(0, -1.28, -0.2);
+  stageRoot.add(shadowMesh);
 
-  // 尝试加载远程高精度圆角立方体 GLB
-  let readyFired = false;
-  const fireReady = () => {
-    if (!readyFired) {
-      readyFired = true;
-      if (onReady) onReady();
-    }
+  scene.add(stageRoot);
+
+  // 入场弹性展开动画
+  const state = {
+    scaleX: 0.001,
+    scaleY: 0.001,
+    scaleZ: 0.001,
+    pulse: 0,
   };
 
-  const gltfLoader = new GLTFLoader();
-  const loadTimer = setTimeout(fireReady, 1200);
-  gltfLoader.load(
-    MODEL_URL,
-    (gltf) => {
-      clearTimeout(loadTimer);
-      try {
-        gltf.scene.updateMatrixWorld(true);
-        const parts = [];
-        gltf.scene.traverse((child) => {
-          if (child.isMesh && child.geometry) {
-            let g = child.geometry.clone();
-            g.deleteAttribute('uv');
-            g.deleteAttribute('color');
-            g.deleteAttribute('tangent');
-            g = mergeVertices(g, 1e-4);
-            g.computeVertexNormals();
-            g.applyMatrix4(child.matrixWorld);
-            parts.push(g);
-          }
-        });
-        if (parts.length > 0) {
-          const merged = normalizeGeometry(mergeGeometries(parts, false));
-          cubeMesh.geometry.dispose();
-          cubeMesh.geometry = merged;
-        }
-      } catch (_) {
-        // 保持 fallbackGeo
-      }
-      fireReady();
-    },
-    undefined,
-    () => {
-      clearTimeout(loadTimer);
-      fireReady();
-    }
-  );
+  gsap.to(state, {
+    scaleX: 1,
+    scaleY: 1,
+    scaleZ: 1,
+    duration: 1.25,
+    delay: 0.08,
+    ease: 'elastic.out(1.05, 0.5)',
+  });
 
-  // 4. 视口与滚动状态
-  let visW = 10;
-  let visH = 6;
-  let baseScale = 2.2;
-  let isMobile = false;
-
-  // 滚动驱动状态（由 GSAP ScrollTrigger 控制）
-  const scrollState = {
-    progress: 0,
-    screenX: 0.56, // 屏幕水平比例 (0..1)
-    screenY: 0.47, // 屏幕垂直比例 (0..1)
-    scaleMult: 1.0,
-    rotX: 0,
-    rotY: 0,
-    rotZ: 0,
-    chromatic: 0.56,
-  };
-
-  const cubeBounce = { scale: 1.0 };
-
-  function pulseCube(strength = 1) {
-    gsap.killTweensOf(cubeBounce);
-    gsap.fromTo(
-      cubeBounce,
-      { scale: 1 + 0.16 * strength },
-      { scale: 1.0, duration: 0.85, ease: 'elastic.out(1.2, 0.38)' }
-    );
-    gsap.fromTo(
-      frontMat.uniforms.uChromatic,
-      { value: 0.92 },
-      { value: scrollState.chromatic, duration: 0.75, ease: 'power2.out' }
-    );
+  function triggerJellyBounce(strength = 1) {
+    gsap.killTweensOf(state);
+    const tl = gsap.timeline();
+    tl.to(state, {
+      scaleX: 1 + 0.22 * strength,
+      scaleY: 1 - 0.18 * strength,
+      scaleZ: 1 + 0.22 * strength,
+      pulse: 1.0,
+      duration: 0.11,
+      ease: 'power2.out',
+    })
+      .to(state, {
+        scaleX: 1,
+        scaleY: 1,
+        scaleZ: 1,
+        duration: 0.95,
+        ease: 'elastic.out(1.25, 0.35)',
+      })
+      .to(
+        state,
+        {
+          pulse: 0,
+          duration: 0.65,
+          ease: 'power2.out',
+        },
+        0.11
+      );
   }
+
+  // 视口自适应布局
+  let visH = 5;
+  let baseScale = 1;
 
   function layout() {
     const W = window.innerWidth;
@@ -252,31 +324,26 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
     renderer.setPixelRatio(dpr);
     renderer.setSize(W, H, false);
 
-    const drawW = Math.max(1, Math.round(W * dpr));
-    const drawH = Math.max(1, Math.round(H * dpr));
-    rtBack.setSize(drawW, drawH);
-    rtFront.setSize(drawW, drawH);
-
-    backMat.uniforms.uResolution.value.set(drawW, drawH);
-    frontMat.uniforms.uResolution.value.set(drawW, drawH);
-
     const aspect = W / Math.max(1, H);
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
 
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
     visH = 2 * Math.tan(fovRad / 2) * camera.position.z;
-    visW = visH * aspect;
 
-    isMobile = W < 768 || aspect < 1;
-    const px = Math.min(H * 0.43, W * (isMobile ? 0.46 : 0.285));
-    baseScale = (px / H) * visH;
+    const isMobile = W < 640 || aspect < 0.85;
+    // 西红柿位于屏幕中心偏上（约 34% 高度处），下方留给「网站正在施工」标题
+    const sy = isMobile ? 0.33 : 0.34;
+    stageRoot.position.set(0, (0.5 - sy) * visH, 0);
+
+    const targetPx = Math.min(H * (isMobile ? 0.25 : 0.29), W * (isMobile ? 0.42 : 0.22));
+    baseScale = (targetPx / H) * visH * 0.55;
   }
 
   layout();
   window.addEventListener('resize', layout);
 
-  // 5. 鼠标视差、Raycaster 微交互与拖拽旋转
+  // 拖拽旋转与惯性物理
   const axisY = new THREE.Vector3(0, 1, 0);
   const axisX = new THREE.Vector3(1, 0, 0);
   const qTmp = new THREE.Quaternion();
@@ -304,7 +371,7 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
   let lastX = 0;
   let lastY = 0;
   let lastMoveTime = 0;
-  let velX = 0;
+  let velX = 0.012;
   let velY = 0;
   let releaseTime = -10;
 
@@ -315,52 +382,17 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
       const ny = -(e.clientY / window.innerHeight) * 2 + 1;
       pointerTargetNDC.set(nx, ny);
 
-      if (!isDragging) {
-        const heroScroll = window.scrollY / Math.max(1, window.innerHeight);
-        if (heroScroll > 0.75) {
-          toys.setHovered(null);
-          if (onHoverChange) onHoverChange(false);
-          return;
-        }
+      if (!isDragging && onHoverChange) {
         raycaster.setFromCamera(pointerTargetNDC, camera);
-        const hits = raycaster.intersectObjects([...toys.meshes, cubeMesh], true);
-        if (hits.length > 0) {
-          const hitMesh = hits[0].object;
-          if (hitMesh !== cubeMesh) {
-            toys.setHovered(hitMesh);
-          } else {
-            toys.setHovered(null);
-          }
-          if (onHoverChange) onHoverChange(true);
-        } else {
-          toys.setHovered(null);
-          if (onHoverChange) onHoverChange(false);
-        }
+        const hits = raycaster.intersectObject(tomato.group, true);
+        onHoverChange(hits.length > 0);
       }
     },
     { passive: true }
   );
 
-  // 全局点击检测（仅在第一屏响应 3D 悬浮几何体点击弹跳）
-  window.addEventListener('pointerdown', (e) => {
-    if (window.scrollY > window.innerHeight * 0.75) return;
-    const tag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
-    if (tag === 'a' || tag === 'button' || (e.target && e.target.closest && e.target.closest('a, button'))) {
-      return;
-    }
-    const nx = (e.clientX / window.innerWidth) * 2 - 1;
-    const ny = -(e.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera({ x: nx, y: ny }, camera);
-    const toyHits = raycaster.intersectObjects(toys.meshes, true);
-    if (toyHits.length > 0) {
-      toys.onClickMesh(toyHits[0].object);
-      velX += (Math.random() - 0.5) * 0.04;
-      velY += (Math.random() - 0.5) * 0.04;
-    }
-  });
-
-  // 拖拽热区与玻璃立方体交互
   const dragEl = dragZone || canvas;
+
   dragEl.addEventListener('pointerdown', (e) => {
     isDragging = true;
     activePointerId = e.pointerId;
@@ -369,7 +401,6 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
         dragEl.setPointerCapture(e.pointerId);
       } catch (_) {}
     }
-    dragEl.classList.add('dragging');
     downX = e.clientX;
     downY = e.clientY;
     lastX = e.clientX;
@@ -383,8 +414,8 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
     if (!isDragging || e.pointerId !== activePointerId) return;
     const now = performance.now();
     const dtMs = Math.max(1, now - lastMoveTime);
-    const dx = (e.clientX - lastX) * 0.0085;
-    const dy = (e.clientY - lastY) * 0.0085;
+    const dx = (e.clientX - lastX) * 0.009;
+    const dy = (e.clientY - lastY) * 0.009;
     lastX = e.clientX;
     lastY = e.clientY;
     lastMoveTime = now;
@@ -400,15 +431,13 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
     if (!isDragging || e.pointerId !== activePointerId) return;
     isDragging = false;
     activePointerId = null;
-    dragEl.classList.remove('dragging');
 
     const dist = Math.hypot(e.clientX - downX, e.clientY - downY);
     if (dist < 6) {
-      // 轻点立方体：触发 Q 弹色散脉冲 + 卫星齐跳
-      pulseCube(1.0);
-      toys.triggerWaveAll();
-      velX = 0.042;
-      velY = -0.024;
+      // 轻点西红柿：触发 Q 弹果冻弹跳与欢快自转
+      triggerJellyBounce(1.0);
+      velX = 0.055;
+      velY = -0.022;
     } else if (performance.now() - lastMoveTime > 90) {
       velX = 0;
       velY = 0;
@@ -419,118 +448,62 @@ export function createStage({ canvas, dragZone, onHoverChange, onReady }) {
   dragEl.addEventListener('pointerup', endDrag);
   dragEl.addEventListener('pointercancel', endDrag);
 
-  // 6. 渲染循环
+  // 渲染循环
   let prevTime = performance.now() * 0.001;
 
-  function renderFrame() {
-    requestAnimationFrame(renderFrame);
+  function animate() {
+    requestAnimationFrame(animate);
 
     const now = performance.now() * 0.001;
     const dt = Math.min(0.05, Math.max(0.0001, now - prevTime));
     prevTime = now;
     const frames = dt * 60;
 
-    // 计算第一屏滚动进度：0 = 第一屏顶部，>= 1 = 第一屏已滚出视口
-    const heroScroll = Math.max(0, window.scrollY / Math.max(1, window.innerHeight));
-
-    // 鼠标视差平滑插值
     pointerNDC.x += (pointerTargetNDC.x - pointerNDC.x) * Math.min(1, dt * 6);
     pointerNDC.y += (pointerTargetNDC.y - pointerNDC.y) * Math.min(1, dt * 6);
-    headline.setMotion(pointerNDC.x, pointerNDC.y, heroScroll);
 
-    // 更新背景喷枪颗粒渐变着色器的时间参数
-    bgMat.uniforms.uScroll.value = 0;
-    bgMat.uniforms.uTime.value = now;
-
-    // 如果已经滚出第一屏 (#hero)，隐藏全部 3D 动效物体，仅渲染干净背景，杜绝视觉冗杂
-    if (heroScroll >= 1.15) {
-      renderer.setRenderTarget(null);
-      renderer.autoClear = true;
-      renderer.render(bgScene, bgCamera);
-      return;
-    }
-
-    // 立方体惯性与待机自转
     if (!isDragging) {
       if (Math.abs(velX) > 1e-6 || Math.abs(velY) > 1e-6) {
         applyWorldRotation(velX * frames, velY * frames);
-        const damping = Math.pow(0.94, frames);
+        const damping = Math.pow(0.95, frames);
         velX *= damping;
         velY *= damping;
       }
 
       const sinceRelease = now - releaseTime;
-      if (sinceRelease > 0.5) {
-        const blend = Math.min(1, (sinceRelease - 0.5) / 1.0);
-        applyWorldRotation(0.0038 * frames * blend, 0.0014 * frames * blend);
+      if (sinceRelease > 0.4) {
+        const blend = Math.min(1, (sinceRelease - 0.4) / 1.0);
+        applyWorldRotation(0.0042 * frames * blend, Math.sin(now * 0.7) * 0.0006 * frames * blend);
       }
     }
 
-    // 3D 舞台整体随第一屏自然上移滚出视口
-    mainScene.position.y = heroScroll * visH * 1.05;
-    const heroFadeScale = Math.max(0.001, 1 - Math.max(0, heroScroll - 0.15) * 0.85);
+    // 柔和悬浮呼吸 + 鼠标微视差
+    const floatY = Math.sin(now * 1.65) * 0.075;
+    bounceGroup.position.x = pointerNDC.x * 0.08;
+    bounceGroup.position.y = floatY + pointerNDC.y * 0.06;
+    bounceGroup.scale.set(
+       baseScale * state.scaleX,
+      baseScale * state.scaleY,
+      baseScale * state.scaleZ
+    );
 
-    const sx = isMobile ? 0.5 : scrollState.screenX;
-    const sy = isMobile ? 0.44 : scrollState.screenY;
-    const targetX = (sx - 0.5) * visW + pointerNDC.x * 0.22;
-    const targetY = (0.5 - sy) * visH + pointerNDC.y * 0.18 + Math.sin(now * 1.5) * 0.08;
+    // 底部软阴影随悬浮高度同步缩放浓淡
+    const shadowScale = baseScale * (1.0 - floatY * 0.65);
+    shadowMesh.scale.setScalar(Math.max(0.001, shadowScale));
+    shadowMesh.position.x = bounceGroup.position.x;
+    shadowMesh.position.y = -baseScale * 1.18;
 
-    pivot.position.x += (targetX - pivot.position.x) * Math.min(1, dt * 8);
-    pivot.position.y += (targetY - pivot.position.y) * Math.min(1, dt * 8);
-
-    const finalScale = baseScale * cubeBounce.scale * heroFadeScale;
-    pivot.scale.setScalar(finalScale);
-
-    // 更新 3D 悬浮几何体（固定在第一屏，不随滚动乱飞）
-    toys.update(now, dt, pointerNDC, 0, isMobile, pivot.position);
-    toys.group.scale.setScalar(heroFadeScale);
-
-    // ===== 双通道色散折射管线 =====
-    // 背面折射只采样位于立方体后方 (z < 0) 的悬浮几何体
-    cubeMesh.visible = false;
-    toys.meshes.forEach((m) => {
-      m.visible = m.position.z < 0;
+    tomato.materials.forEach((mat) => {
+      mat.uniforms.uTime.value = now;
+      mat.uniforms.uPulse.value = state.pulse;
     });
 
-    // Pass 1: 背景画布 + 后景 3D 玩具 -> rtBack
-    renderer.setRenderTarget(rtBack);
-    renderer.autoClear = true;
-    renderer.render(bgScene, bgCamera);
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    renderer.render(mainScene, camera);
-
-    // Pass 2: 背景画布 + 后景 3D 玩具 + 玻璃立方体背面 -> rtFront
-    renderer.setRenderTarget(rtFront);
-    renderer.autoClear = true;
-    renderer.render(bgScene, bgCamera);
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    renderer.render(mainScene, camera);
-
-    cubeMesh.visible = true;
-    cubeMesh.material = backMat;
-    renderer.render(mainScene, camera);
-
-    // Pass 3: 背景画布 + 全部 3D 玩具 + 玻璃立方体正面 -> 屏幕
-    toys.meshes.forEach((m) => {
-      m.visible = true;
-    });
-    renderer.setRenderTarget(null);
-    renderer.autoClear = true;
-    renderer.render(bgScene, bgCamera);
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    cubeMesh.material = frontMat;
-    renderer.render(mainScene, camera);
+    renderer.render(scene, camera);
   }
 
-  renderFrame();
+  animate();
 
   return {
-    headline,
-    scrollState,
-    pulseCube,
-    triggerWaveAll: toys.triggerWaveAll,
+    triggerJellyBounce,
   };
 }
