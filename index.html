@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>zzfun.cc — 造点好玩的 · Making the web a playground</title>
+  <meta name="description" content="zzfun 的晴空实验室——代码、设计与一切好玩的东西。白蓝黄三原色。">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='18.5' rx='12.5' ry='10.8' fill='%23FF5242'/><path d='M9.5 15.5c.8-2.6 2.8-4.2 5.2-4.6' stroke='%23FFE3DC' stroke-width='2.2' stroke-linecap='round' fill='none'/><path d='M16 4.5v5M16 9c-3.2-2.2-6.8-1-8.5 1.8 2.8-.4 5.5.2 8.5 1.2 3-1 5.7-1.6 8.5-1.2-1.7-2.8-5.3-4-8.5-1.8Z' fill='%2327AE60' stroke='%231E8449' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- WebGL 画布：固定全屏，巨型标题由 canvas 纹理绘制（玻璃折射它的就是这层） -->
+  <canvas id="gl" aria-hidden="true"></canvas>
+  <h1 class="sr-only">zzfun.cc — Making the web a playground</h1>
+
+  <!-- 预载器 -->
+  <div class="preloader" id="preloader">
+    <div class="preloader-inner">
+      <span class="preloader-word">zzfun.cc</span>
+      <span class="preloader-count" id="preCount">00</span>
+    </div>
+    <div class="preloader-bar"><i id="preBar"></i></div>
+  </div>
+
+  <!-- 自定义光标 -->
+  <div class="cursor" id="cursor" aria-hidden="true"><i></i></div>
+
+  <!-- 导航 -->
+  <header class="nav" id="nav">
+    <a class="logo" href="#hero" data-hover data-scroll-to="#hero">
+      <span class="logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="16" cy="18.5" rx="12" ry="10.2" fill="#FF5242" stroke="#0C3B66" stroke-width="2.2"/>
+          <path d="M9.5 16.5C10.2 14 12 12.4 14.5 12" stroke="#FFF2EE" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M16 4.2V8.8" stroke="#0C3B66" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M16 8.2C12.8 6.2 9 7.2 7.5 10.2C10.5 9.8 13.4 10.4 16 11.8C18.6 10.4 21.5 9.8 24.5 10.2C23 7.2 19.2 6.2 16 8.2Z" fill="#2ECC71" stroke="#0C3B66" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <b>zzfun</b><span class="logo-tld">.cc</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#about" data-hover data-scroll-to="#about">关于 <small>WHO</small></a>
+      <a href="#links" data-hover data-scroll-to="#links">入口 <small>FIND</small></a>
+      <a href="#contact" data-hover data-scroll-to="#contact">联系 <small>HI</small></a>
+    </nav>
+  </header>
+
+  <main id="smooth-content">
+    <!-- ===== 第一幕 · HERO ===== -->
+    <section class="scene hero" id="hero">
+      <div class="hero-ui">
+        <p class="kicker mono rise" style="--i:0">HELLO, WELCOME TO <b>ZZFUN.CC</b></p>
+        <p class="hero-tagline rise" style="--i:1">造点好玩的。<br><em>Making the web a playground.</em></p>
+        <div class="scroll-hint rise" style="--i:2" aria-hidden="true">
+          <span class="mono">SCROLL</span><i></i>
+        </div>
+        <div class="drag-hint rise" style="--i:3" aria-hidden="true">
+          <i class="drag-dot"></i><span class="mono">DRAG ME</span>
+        </div>
+      </div>
+      <!-- 拖拽热区（盖在立方体上） -->
+      <div class="drag-zone" id="dragZone" aria-hidden="true"></div>
+    </section>
+
+    <!-- ===== 第二幕 · WHO ===== -->
+    <section class="scene about" id="about">
+      <div class="scene-inner">
+        <p class="kicker mono rise" style="--i:0"><b>01</b> WHO IS ZZFUN</p>
+        <h2 class="display rise" style="--i:1">Making the web<br><span class="hl">a playground.</span></h2>
+        <p class="body-cn rise" style="--i:2">
+          白蓝黄是我的三原色：白的留白，蓝的克制，黄的调皮。<br>
+          这里是 zzfun 的晴空实验室——写代码、做设计、折腾一切亮晶晶的东西。
+        </p>
+      </div>
+    </section>
+
+    <!-- ===== 第三幕 · FIND ME ===== -->
+    <section class="scene links" id="links">
+      <div class="scene-inner">
+        <p class="kicker mono rise" style="--i:0"><b>02</b> FIND ME</p>
+        <h2 class="display rise" style="--i:1">Where to<br>catch <span class="hl">me.</span></h2>
+        <div class="link-cards">
+          <a class="link-card rise" style="--i:2" href="#" data-hover>
+            <span class="lc-index mono">01</span>
+            <span class="lc-name">GitHub</span>
+            <span class="lc-cn">代码都堆在这儿</span>
+            <span class="lc-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></span>
+          </a>
+          <a class="link-card rise" style="--i:3" href="#" data-hover>
+            <span class="lc-index mono">02</span>
+            <span class="lc-name">Bilibili</span>
+            <span class="lc-cn">折腾过程的录像</span>
+            <span class="lc-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></span>
+          </a>
+          <a class="link-card rise" style="--i:4" href="#" data-hover>
+            <span class="lc-index mono">03</span>
+            <span class="lc-name">Email</span>
+            <span class="lc-cn">hi@zzfun.cc</span>
+            <span class="lc-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></span>
+          </a>
+        </div>
+        <p class="links-note mono rise" style="--i:5">* 链接待填：把 href 换成你的真实地址</p>
+      </div>
+    </section>
+
+    <!-- ===== 第四幕 · SAY HI ===== -->
+    <section class="scene contact" id="contact">
+      <div class="scene-inner">
+        <p class="kicker mono rise" style="--i:0"><b>03</b> SAY HI</p>
+        <h2 class="contact-big rise" style="--i:1">有想法？<br><span class="hl">随时喊我。</span></h2>
+        <a class="contact-mail rise" style="--i:2" href="#" data-hover>
+          <span class="mono">MAIL TO</span><b>hi@zzfun.cc</b>
+        </a>
+      </div>
+      <footer class="footer">
+        <span class="footer-outline" aria-hidden="true">ZZFUN.CC</span>
+        <p class="footer-line mono">© 2026 zzfun · 白蓝黄，与一点点红 · Powered by WebGL</p>
+      </footer>
+    </section>
+  </main>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

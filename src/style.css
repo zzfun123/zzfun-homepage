@@ -1,0 +1,199 @@
+/* ============ 设计 token ============ */
+:root {
+  --paper: #FFFFFF;
+  --blue: #0E7FD8;
+  --ink: #0C3B66;
+  --lemon: #FFC940;
+  --ribbon: #FF6154;
+  --ink-60: color-mix(in oklch, var(--ink) 62%, white);
+  --ink-line: color-mix(in oklch, var(--ink) 14%, transparent);
+  --blue-soft: color-mix(in oklch, var(--blue) 10%, white);
+
+  --font-en: 'Space Grotesk', sans-serif;
+  --font-cn: 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --bounce: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --pad-x: clamp(20px, 6vw, 110px);
+  --r-card: 24px;
+  --shadow-1: 4px 5px 0 color-mix(in oklch, var(--ink) 10%, transparent);
+  --shadow-2: 10px 16px 34px color-mix(in oklch, var(--ink) 14%, transparent);
+}
+
+/* ============ 基础 ============ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+html { scroll-behavior: initial } /* Lenis 接管 */
+html.lenis, html.lenis body { height: auto }
+.lenis.lenis-smooth { scroll-behavior: auto !important }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-cn);
+  font-size: clamp(1rem, .95rem + .3vw, 1.15rem);
+  line-height: 1.75;
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none }
+p { text-wrap: pretty }
+::selection { background: var(--lemon); color: var(--ink) }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 6px }
+.mono { font-family: var(--font-mono); letter-spacing: .08em }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+
+/* 触摸设备隐藏自定义光标 */
+@media (pointer: fine) {
+  body { cursor: none }
+  body a, body button { cursor: none }
+}
+
+/* ============ WebGL 画布 ============ */
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0 }
+
+main { position: relative; z-index: 2 }
+
+/* ============ 预载器 ============ */
+.preloader {
+  position: fixed; inset: 0; z-index: 60; background: var(--blue); color: white;
+  display: grid; place-items: center;
+}
+.preloader-inner { display: flex; align-items: baseline; gap: 1.2rem }
+.preloader-word { font-family: var(--font-en); font-weight: 700; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -.02em }
+.preloader-count { font-family: var(--font-mono); font-size: clamp(1.1rem, 2.4vw, 1.6rem); color: var(--lemon) }
+.preloader-bar { position: absolute; left: 0; bottom: 0; width: 100%; height: 5px; background: color-mix(in oklch, white 22%, transparent) }
+.preloader-bar i { display: block; height: 100%; width: 0%; background: var(--lemon) }
+
+/* ============ 自定义光标 ============ */
+.cursor { position: fixed; left: 0; top: 0; z-index: 55; pointer-events: none; display: none }
+@media (pointer: fine) { .cursor { display: block } }
+.cursor i {
+  position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--blue); opacity: .9; translate: var(--cx, 0) var(--cy, 0);
+  transition: scale .3s var(--bounce), background .25s;
+}
+.cursor.is-hover i { scale: 2.2; background: var(--lemon); opacity: .95 }
+.cursor.is-down i { scale: .7 }
+
+/* ============ 导航 ============ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: clamp(16px, 3vh, 28px) var(--pad-x);
+}
+.logo { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-en); font-size: 19px; letter-spacing: -.02em }
+.logo b { font-weight: 700 }
+.logo-tld { font-weight: 400; color: var(--ink-60) }
+.logo-mark { width: 28px; height: 28px; display: inline-grid; place-items: center; transition: rotate .35s var(--bounce), scale .35s var(--bounce) }
+.logo-mark svg { width: 100%; height: 100%; display: block; filter: drop-shadow(2px 2px 0 var(--lemon)) }
+.logo:hover .logo-mark { rotate: -12deg; scale: 1.14 }
+.nav-links { display: flex; gap: clamp(18px, 3.4vw, 44px) }
+.nav-links a { position: relative; font-weight: 500; font-size: 15px; padding: 4px 0 }
+.nav-links a small { font-family: var(--font-mono); font-size: 10px; color: var(--blue); margin-left: 5px; letter-spacing: .1em }
+.nav-links a::after { content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: var(--blue); border-radius: 2px; transform: scaleX(0); transform-origin: right; transition: transform .35s var(--ease-out) }
+.nav-links a:hover::after { transform: scaleX(1); transform-origin: left }
+@media (max-width: 640px) { .nav-links a small { display: none } }
+
+/* ============ 场景通用 ============ */
+.scene { min-height: 100svh; position: relative; display: flex; align-items: center; padding-inline: var(--pad-x) }
+.scene-inner { width: min(920px, 100%); position: relative }
+
+.kicker {
+  display: inline-flex; align-items: center; gap: .6rem;
+  font-size: 12px; background: white; border: 2.5px solid var(--ink); border-radius: 999px;
+  padding: .34rem 1.05rem; box-shadow: 3px 3px 0 var(--lemon); color: var(--ink);
+}
+.kicker b { color: var(--blue) }
+.display {
+  font-family: var(--font-en); font-weight: 700; letter-spacing: -.02em;
+  font-size: clamp(2.6rem, 6.4vw, 5.2rem); line-height: 1.06; margin-top: 1.4rem;
+}
+.hl { color: var(--blue); position: relative; display: inline-block }
+.hl::after {
+  content: ''; position: absolute; left: -.06em; right: -.06em; bottom: .04em; height: .34em;
+  background: var(--lemon); z-index: -1; border-radius: 3px; rotate: -1deg;
+}
+.body-cn { margin-top: 1.6rem; color: var(--ink-60); font-size: clamp(1.05rem, 1rem + .5vw, 1.3rem); max-width: 34em }
+
+/* 登场动画 */
+.rise { opacity: 0; transform: translateY(44px) scale(.96); transition: opacity .55s var(--ease-out), transform .8s var(--bounce); transition-delay: calc(var(--i, 0) * 110ms) }
+.in-view .rise { opacity: 1; transform: none }
+.hero .rise { transition-delay: calc(var(--i, 0) * 110ms + .1s) }
+
+/* ============ HERO ============ */
+.hero { align-items: stretch }
+.hero-ui { width: 100%; position: relative; padding-top: clamp(96px, 15vh, 150px) }
+.hero .kicker { position: absolute; left: 0; top: clamp(96px, 15vh, 150px) }
+.hero-tagline {
+  position: absolute; left: 0; bottom: clamp(90px, 16vh, 150px);
+  font-size: clamp(1.3rem, 2.2vw, 1.9rem); font-weight: 700; line-height: 1.5;
+}
+.hero-tagline em { font-family: var(--font-en); font-style: normal; font-weight: 400; font-size: .72em; color: var(--ink-60); letter-spacing: 0 }
+.scroll-hint { position: absolute; left: 50%; bottom: 2.2rem; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: .35rem; color: var(--blue); font-size: 11px }
+.scroll-hint i { width: 11px; height: 11px; border-right: 2.5px solid var(--blue); border-bottom: 2.5px solid var(--blue); transform: rotate(45deg); animation: hint-dip 1.5s var(--bounce) infinite }
+@keyframes hint-dip { 0%, 100% { translate: 0 0; opacity: .5 } 50% { translate: 0 7px; opacity: 1 } }
+.drag-hint {
+  position: absolute; right: var(--pad-x); bottom: clamp(90px, 16vh, 150px);
+  display: inline-flex; align-items: center; gap: .55rem;
+  color: var(--ink-60); font-size: 11px;
+}
+.drag-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--ribbon); animation: drag-pulse 1.6s ease-in-out infinite }
+@keyframes drag-pulse { 0%, 100% { scale: 1; opacity: 1 } 50% { scale: 1.5; opacity: .6 } }
+@media (max-width: 768px) { .drag-hint { display: none } }
+.drag-zone { position: absolute; right: 0; top: 8%; width: 52%; height: 78%; cursor: grab; touch-action: none }
+.drag-zone.dragging { cursor: grabbing }
+
+/* ============ LINKS ============ */
+.links .scene-inner { width: min(1060px, 100%) }
+.link-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.4rem; margin-top: 2.8rem }
+.link-card {
+  position: relative; background: white; border: 2.5px solid var(--ink); border-radius: var(--r-card);
+  padding: 1.6rem 1.5rem 1.4rem; box-shadow: var(--shadow-1); display: grid; gap: .3rem;
+  transition: box-shadow .3s var(--ease-out), translate .35s var(--bounce);
+}
+.link-card:hover { translate: 0 -6px; box-shadow: var(--shadow-2) }
+.link-card:hover .lc-arrow { translate: 4px -4px; rotate: 0deg; opacity: 1 }
+.lc-index { font-size: 11px; color: var(--blue) }
+.lc-name { font-family: var(--font-en); font-weight: 700; font-size: 1.5rem; letter-spacing: -.01em }
+.lc-cn { color: var(--ink-60); font-size: .92rem }
+.lc-arrow {
+  position: absolute; right: 1.3rem; top: 1.4rem; width: 34px; height: 34px; border-radius: 50%;
+  border: 2.5px solid var(--ink); display: grid; place-items: center; color: var(--ink);
+  rotate: 45deg; opacity: 0; transition: translate .3s var(--bounce), rotate .3s var(--bounce), opacity .25s;
+}
+.lc-arrow svg { width: 16px; height: 16px }
+.link-card:hover .lc-arrow { background: var(--lemon) }
+.links-note { margin-top: 1.4rem; font-size: 11px; color: var(--ink-60) }
+
+/* ============ CONTACT / FOOTER ============ */
+.contact { flex-direction: column; justify-content: center; align-items: stretch }
+.contact .scene-inner { text-align: left }
+.contact-big {
+  font-family: var(--font-cn); font-weight: 700; letter-spacing: .01em;
+  font-size: clamp(2.8rem, 7vw, 6rem); line-height: 1.18; margin-top: 1.4rem;
+}
+.contact-mail {
+  display: inline-flex; align-items: center; gap: 1.1rem; margin-top: 2.4rem;
+  background: var(--blue); color: white; border-radius: 999px; padding: .9rem 1.9rem;
+  box-shadow: 5px 6px 0 var(--lemon); transition: translate .3s var(--bounce), box-shadow .3s;
+}
+.contact-mail:hover { translate: 0 -4px; box-shadow: 8px 10px 0 var(--lemon) }
+.contact-mail span { font-size: 10px; opacity: .75 }
+.contact-mail b { font-family: var(--font-en); font-size: clamp(1.05rem, 2vw, 1.4rem); letter-spacing: -.01em }
+.footer { margin-top: auto; padding-top: 3rem; position: relative }
+.footer-outline {
+  display: block; text-align: center; font-family: var(--font-en); font-weight: 700;
+  font-size: clamp(4rem, 13.5vw, 13rem); line-height: .95; letter-spacing: -.01em;
+  color: transparent; -webkit-text-stroke: 2px color-mix(in oklch, var(--blue) 34%, white);
+  user-select: none; white-space: nowrap;
+}
+.footer-line { text-align: center; font-size: 10.5px; color: var(--ink-60); padding: 1.2rem 0 1.6rem }
+
+/* ============ 减少动效 ============ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  .rise { opacity: 1; transform: none }
+}
