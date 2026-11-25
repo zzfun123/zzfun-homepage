@@ -266,6 +266,60 @@ a {
   color: var(--ink-subtle);
 }
 
+/* ============ 日语学习入口按钮 ============ */
+.jp-entry-btn {
+  pointer-events: auto;
+  margin-top: clamp(16px, 2.4vh, 24px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px 9px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 6px 20px rgba(8, 32, 22, 0.08);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: transform 0.35s var(--bounce), background 0.25s, box-shadow 0.25s;
+}
+
+.jp-entry-btn:hover {
+  background: rgba(255, 255, 255, 0.96);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 10px 26px rgba(8, 32, 22, 0.14);
+}
+
+.jp-entry-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.jp-entry-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--tomato);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.jp-entry-arrow {
+  font-size: 13px;
+  color: var(--ink-muted);
+  transition: transform 0.25s var(--ease-out);
+}
+
+.jp-entry-btn:hover .jp-entry-arrow {
+  transform: translateX(3px);
+}
+
 /* ============ 底部注脚 ============ */
 .bottombar {
   display: flex;
